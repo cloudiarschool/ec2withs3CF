@@ -1,0 +1,175 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "IAM role for s3 from EC2 Instance",
+    "Parameters": {
+        "KeyName": {
+            "Description": "EC2 key pair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "myVPC": {
+            "Description": "Use DevOps VPC",
+            "Type": "String",
+            "Default": "vpc-d08d7dad"
+        },
+        "mySubnet": {
+            "Description": "Use DevOps Subnet",
+            "Type": "String",
+            "Default": "subnet-a979e7a7"
+        },
+        "InstanceType": {
+            "Description": "EC2 Instace types",
+            "Type": "String",
+            "Default": "t2.micro",
+            "AllowedValues": ["t2.micro", "t2.small"]
+        }
+    },
+    "Mappings": {
+        "AMIs": {
+            "us-east-1" : {
+                "Name": "ami-0947d2ba12ee1ff75"
+            },
+            "us-east-2" : {
+                "Name": "ami-03657b56516ab7912"
+            },
+            "us-west-1" : {
+                "Name": "ami-0e4035ae3f70c400f"
+            }
+        }
+    },
+    "Resources": {
+        "EC2WithRole": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "InstanceType": {
+                    "Ref": "InstanceType"
+                },
+                "SubnetId": { "Ref": "mySubnet" },
+                "ImageId": {
+                    "Fn::FindInMap" : [
+                        "AMIs",
+                        {
+                            "Ref": "AWS::Region"
+                        },
+                        "Name"
+                    ]
+                },
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "IamInstanceProfile" : {
+                    "Ref": "ListBuckets"
+                },
+                "SecurityGroupIds": [
+                    {
+                        "Ref": "MySG"
+                    }
+                ],
+                "Tags" : [
+                    {
+                        "Key" : "Name",
+                        "Value" : "EC2WithRole"
+                    }
+                ]
+            }
+        },
+        "MySG" : {
+            "Type" : "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": { "Ref" : "myVPC"},
+                "GroupDescription": "Allow SSH access",
+                "SecurityGroupIngress" : [
+                    {
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "IpProtocol": "tcp",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "EC2-S3-SG"
+                    }
+                ]
+            }
+        },
+        "ListBuckets" : {
+            "Type" : "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "S3BucketRole"
+                    }
+                ]
+            }
+        },
+        "S3BucketPolicy" : {
+            "Type" : "AWS::IAM::Policy",
+            "Properties" : {
+                "PolicyName": "S3BucketPolicy",
+                "PolicyDocument" : {
+                    "Statement" : [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "s3:List*",
+                                "s3:CreateBucket"
+                            ],
+                            "Resource": "*"
+                        }
+                    ]
+                },
+                "Roles" : [
+                    {
+                        "Ref" : "S3BucketRole"
+                    }
+                ]
+            }
+        },
+        "S3BucketRole" : {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Principal" : {
+                                "Service" : ["ec2.amazonaws.com"]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/"
+            }
+        }
+    },
+    "Outputs": {
+        "EC2": {
+            "Description" : "Print ssh command",
+            "Value" : {
+               "Fn::Join" : [
+                   "",
+                   [
+                       "ssh ec2-user@",
+                       {
+                           "Fn::GetAtt" : [
+                               "EC2WithRole",
+                               "PublicIp"
+                           ]
+                       },
+                       "-i",
+                       {
+                           "Ref" : "KeyName"
+                       },
+                       ".pem"
+                   ]
+               ]
+            }
+        }
+    }
+}
